@@ -42,10 +42,13 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           sed -i -E "s/^version[[:space:]]*=[[:space:]]*\"[^\"]*\"/version = \"$version\"/" pyproject.toml
 
+      - name: Generate Windows version info
+        run: python make_versiontxt.py
+
       - name: Build executable
         shell: bash
         run: |
-          PyInstaller --onedir --windowed src/dbd_maps/map_overlay.py
+          PyInstaller --onedir --windowed --version-file version.txt src/dbd_maps/map_overlay.py
           cp config.ini dist/map_overlay/config.ini
           cp -r local_maps dist/map_overlay/local_maps
 
