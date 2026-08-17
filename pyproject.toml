@@ -1,0 +1,25 @@
+[build-system]
+requires = [
+    "setuptools>=80",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dbd-maps"
+version = "0.0.0"
+description = "Dead by Daylight map overlay"
+requires-python = ">=3.13"
+dependencies = [
+    "Pillow",
+    "mss",
+    "keyboard",
+    "winocr; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

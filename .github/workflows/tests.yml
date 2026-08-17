@@ -1,0 +1,55 @@
+name: Tests
+
+on:
+  # We are doomed to duplicate runs when triggering on push.
+  # Once for the commit, and once for the tag to push to release.
+  # This isn't so bad because (a) it is public, and so free.
+  # (b) Release tags will be infrequent.
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  tests:
+    runs-on: windows-latest
+
+    env:
+      PYTHONPATH: src
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install ".[test]"
+
+      - name: Run tests
+        run: pytest -v
+
+      - name: Demonstrate loading screen handling
+        run: python -m dbd_maps.map_overlay --test examples/dbd_loading_screen.png
+
+      - name: Demonstrate Temple of Purgation
+        run: python -m dbd_maps.map_overlay --test examples/temple_of_purgation.jpg
+
+      - name: Run OCR Validation and regression test
+        run: python tests/benchmark_ocr.py
+
+      - name: Trigger release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh workflow run Release \
+            --ref "${GITHUB_REF_NAME}" \
+            -f commit="$GITHUB_SHA"
