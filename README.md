@@ -23,7 +23,7 @@ pip install -r requirements.txt
 python src/dbd_maps/map_overlay.py
 ```
 
-Now I am packaging it as an executable, the commands have been updated to run on Power Shell:
+Now I am packaging it as an executable, the commands have been updated to run on PowerShell:
 
 ```powershell
 pip install .

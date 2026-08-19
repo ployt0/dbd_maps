@@ -9,10 +9,9 @@ import sys
 import threading
 import time
 import tkinter as tk
-import re
 
 from mss import MSS
-from PIL import Image, ImageEnhance, ImageTk
+from PIL import Image, ImageEnhance, ImageTk, ImageSequence
 
 # Windows Native OCR Check
 HAS_WINOCR = False
@@ -29,26 +28,7 @@ TOP_BORDER_PC = 209.0 / 1080
 BOTTOM_BORDER_PC = 980.0 / 1080
 LEFT_BORDER_PC = 510.0 / 1920
 RIGT_BORDER_PC = 1458.0 / 1920
-MAP_FONT_THRESHOLD = 230
-REALM_FONT_THRESHOLD = 150
 
-_ROMAN_SUFFIX = re.compile(
-    r"^(.*?)\s+(i|ii|iii|iv|v|vi|vii|viii|ix|x)$"
-)
-_NUMERIC_SUFFIX = re.compile(r"^(.*?)(\d+)$")
-
-_ROMAN_VALUES = {
-    "i": 1,
-    "ii": 2,
-    "iii": 3,
-    "iv": 4,
-    "v": 5,
-    "vi": 6,
-    "vii": 7,
-    "viii": 8,
-    "ix": 9,
-    "x": 10,
-}
 
 
 def timestamp() -> str:
@@ -59,8 +39,12 @@ def log(msg: str) -> None:
     print(f"[{timestamp()}] {msg}", flush=True)
 
 
-def get_map_box(w: int, h: int):
-    return (int(w * 0.04), int(h * 0.81), int(w * 0.45), int(h * 0.86))
+def get_map_box(w: int, h: int, crop_width: float):
+    """
+    45% screen width isn't enough for long names, but is too much for short
+    ones ("The Game").
+    """
+    return (int(w * 0.04), int(h * 0.81), int(w * crop_width), int(h * 0.86))
 
 def get_realm_box(w: int, h: int):
     return (int(w * 0.04), int(h * 0.86), int(w * 0.35), int(h * 0.90))
@@ -77,36 +61,6 @@ def _correct_realm_and_map_names(maps_by_realm_then_name: dict[str, dict[str, Pa
                 maps_by_realm_then_name[realm][aliases[map_name]] = maps_by_realm_then_name[realm][map_name]
                 del maps_by_realm_then_name[realm][map_name]
 
-def _use_latest_map_variants(
-        maps_by_realm_then_name: dict[str, dict[str, Path]]
-):
-    for maps in maps_by_realm_then_name.values():
-        variants: dict[str, list[tuple[int, str]]] = {}
-
-        for map_name in maps:
-            if match := _ROMAN_SUFFIX.match(map_name):
-                base, numeral = match.groups()
-                variants.setdefault(base, []).append(
-                    (_ROMAN_VALUES[numeral], map_name)
-                )
-
-            elif match := _NUMERIC_SUFFIX.match(map_name):
-                base, number = match.groups()
-                variants.setdefault(base, []).append(
-                    (int(number), map_name)
-                )
-
-        for base, suffixed_variants in variants.items():
-            _, latest_name = max(suffixed_variants)
-            latest_path = maps[latest_name]
-
-            # Remove every version, including an unsuffixed original.
-            for _, variant_name in suffixed_variants:
-                del maps[variant_name]
-            maps.pop(base, None)
-
-            # Reintroduce the latest version under its canonical name.
-            maps[base] = latest_path
 
 
 def is_loading_screen(img: Image.Image) -> tuple[bool, float]:
@@ -170,6 +124,33 @@ def detect_divider_line(img: Image.Image) -> tuple[bool, int]:
 
     return (max_line_length >= 180), max_line_length
 
+def calculate_confidence(read_realm: str, read_map: str,
+                         potential_realm: str, potential_map: str) -> float:
+    score_map = difflib.SequenceMatcher(
+        None, read_map, potential_map.lower()).ratio()
+
+    # If Realm was not read, don't penalize long realm names
+    if not read_realm:
+        return score_map
+
+    score_realm = difflib.SequenceMatcher(
+        None, read_realm, potential_realm.lower()).ratio()
+
+    # Whether to rate the realm name as important as the longer map name.
+    # I say no as it means having to match two different fonts, at once.
+    # this_score = (5 * score_map + score_realm) / 6
+    this_score = (5 * score_map * len(potential_map) + score_realm * len(
+        potential_realm)) / (5 * len(potential_map) + len(potential_realm))
+    return this_score
+
+def ensure_1080p_resolution(crop_map: Image, src_height: int) -> Image:
+    if src_height < 1040:
+        scale_factor = 1080 / src_height
+        new_w = round(crop_map.width * scale_factor)
+        new_h = round(crop_map.height * scale_factor)
+        crop_map = crop_map.resize(
+            (new_w, new_h), resample=Image.Resampling.LANCZOS)
+    return crop_map
 
 
 class Config:
@@ -207,15 +188,18 @@ class GameState(Enum):
     IN_GAME_NO_MAP = auto()
 
 
-
 class DBDOverlayApp:
     def __init__(self, config: Config):
         self.cfg = config
         self.state = GameState.IDLE
         self.running = True
 
+        self._anim_job = None
+        self._anim_frames = []
+        self._anim_idx = 0
+
         self.maps_by_realm_then_name = self._get_maps_by_realm_then_name()
-        _use_latest_map_variants(self.maps_by_realm_then_name)
+        # _use_latest_map_variants(self.maps_by_realm_then_name)
         _correct_realm_and_map_names(self.maps_by_realm_then_name, self.cfg.aliases, self.cfg.realm_aliases)
 
         self.captures_dir = Path("debug_captures")
@@ -227,7 +211,7 @@ class DBDOverlayApp:
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.attributes("-alpha", 0.7)
-        # Fix geometry of dbg overlay, to be ignored by loading screen detection.
+        # Fix geometry of dbg overlay.
         self.root.geometry(f"{STATUS_PANEL_WIDTH}x60+0+0")
         self.root.resizable(False, False)
 
@@ -271,7 +255,7 @@ class DBDOverlayApp:
         self.root.attributes("-topmost", True)
 
     def _make_clickthrough(self):
-        """Makes the Tkinter window completely transparent to mouse events (Windows only)."""
+        """Makes the Tkinter window completely transparent to mouse events."""
         try:
             # Force Tkinter to draw the window so the handle (HWND) exists
             self.root.update_idletasks()
@@ -284,13 +268,9 @@ class DBDOverlayApp:
             WS_EX_LAYERED = 0x00080000
             WS_EX_TRANSPARENT = 0x00000020
 
-            # Fetch the API functions dynamically to safely support both 32-bit and 64-bit Python
-            GetWindowLong = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
-            SetWindowLong = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
-
             # Combine current styles with the layered and transparent styles
-            style = GetWindowLong(hwnd, GWL_EXSTYLE)
-            SetWindowLong(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
+            style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+            user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
 
         except Exception as e:
             log(f"[!] Could not set click-through: {e}")
@@ -301,7 +281,8 @@ class DBDOverlayApp:
             log(f"[!] Warning: Path '{self.cfg.maps_dir}' does not exist.")
             return maps_by_realm_then_name
 
-        files = list(self.cfg.maps_dir.rglob("*.webp"))
+        extensions = ("*.webp", "*.gif", "*.png")
+        files = [p for ext in extensions for p in self.cfg.maps_dir.rglob(ext)]
         for path in files:
             realm_name = path.parent.name.lower()
             maps_by_realm_then_name.setdefault(realm_name, {})
@@ -310,10 +291,14 @@ class DBDOverlayApp:
         log(f"[+] Indexed {len(maps_by_realm_then_name)} local map templates ({len(files)} files).")
         return maps_by_realm_then_name
 
-    # --- UI View Switchers ---
     def update_status_hud(self, state_str: str, dark_pct: float, line_len: int, state_color: str = "#00FFCC"):
         """Show compact {STATUS_PANEL_WIDTH}x60 status HUD."""
         def _update():
+            # Cancel active animation loop if one is running
+            if self._anim_job:
+                self.root.after_cancel(self._anim_job)
+                self._anim_job = None
+
             if self.map_label.winfo_manager():
                 self.map_label.pack_forget()
 
@@ -327,24 +312,54 @@ class DBDOverlayApp:
         self.root.after(0, _update)
 
     def show_map_graphic(self, image_path: Path):
-        """Expand window to configured size and show scaled map graphic."""
+        """Expand window and display static or animated multi-frame / multi-level map."""
+
         def _update():
+            if getattr(self, "_anim_job", None):
+                self.root.after_cancel(self._anim_job)
+                self._anim_job = None
+
             if self.main_frame.winfo_manager():
                 self.main_frame.pack_forget()
 
-            img = Image.open(image_path).convert("RGBA")
-            img = img.resize((self.cfg.overlay_w, self.cfg.overlay_h), Image.Resampling.LANCZOS)
-            photo = ImageTk.PhotoImage(img)
+            raw_img = Image.open(image_path)
+            self._anim_frames = []
 
-            self.map_label.config(image=photo, bg="#000000")
-            self.map_label.image = photo  # Prevent garbage collection
+            for frame in ImageSequence.Iterator(raw_img):
+                # Extract embedded frame duration (fallback to 100ms if 0 or missing)
+                duration = frame.info.get("duration", 100)
+                if duration <= 10:  # Fix for 0ms/near-0ms export quirks in GIFs
+                    duration = 50
+
+                f = frame.convert("RGBA").resize(
+                    (self.cfg.overlay_w, self.cfg.overlay_h),
+                    Image.Resampling.LANCZOS
+                )
+                self._anim_frames.append((ImageTk.PhotoImage(f), duration))
+
             self.map_label.pack(fill="both", expand=True)
-
-            # Expand window to configured dimensions at 0,0
-            self.root.geometry(f"{self.cfg.overlay_w}x{self.cfg.overlay_h}+{self.cfg.overlay_x}+{self.cfg.overlay_y}")
+            self.root.geometry(
+                f"{self.cfg.overlay_w}x{self.cfg.overlay_h}+{self.cfg.overlay_x}+{self.cfg.overlay_y}")
             self.root.attributes("-alpha", min(0.95, self.cfg.opacity))
 
+            self._anim_idx = 0
+            self._cycle_frames()
+
         self.root.after(0, _update)
+
+    def _cycle_frames(self):
+        """Loops through map levels/frames using each frame's embedded duration."""
+        if not self._anim_frames or not self.map_label.winfo_manager():
+            return
+
+        photo, duration = self._anim_frames[self._anim_idx]
+        self.map_label.config(image=photo, bg="#000000")
+        self.map_label.image = photo
+
+        if len(self._anim_frames) > 1:
+            self._anim_idx = (self._anim_idx + 1) % len(self._anim_frames)
+            # Schedule next frame using this specific frame's duration
+            self._anim_job = self.root.after(duration, self._cycle_frames)
 
     def _shutdown_app(self):
         log(f"[+] Global hotkey ({self.cfg.exit_hotkey}) pressed. Shutting down...")
@@ -355,6 +370,10 @@ class DBDOverlayApp:
         """
         Uses explicit RGB bounds to isolate the dark grayish realm sub-text
         from any background (including bright white snow).
+        Fails where the background is also this colour, so we could
+        make a fallback version, to detect the black outline. Luckily
+        realm is usually much shorter than map name, and having
+        a less contrasting font, it ~~is~~ should be weighted less.
         """
         if not HAS_WINOCR:
             return ""
@@ -389,7 +408,7 @@ class DBDOverlayApp:
             log(f"[!] WinOCR Error (Realm): {e}")
             return ""
 
-    def perform_ocr(self, crop_img: Image.Image, threshold: int) -> str:
+    def perform_ocr(self, crop_img: Image.Image) -> str:
         """
         threshold is the text/font brightness. The map is brighter than the realm.
         The realm is sub-text.
@@ -399,10 +418,14 @@ class DBDOverlayApp:
         if not HAS_WINOCR:
             return ""
 
+        ## Higher is good for Ormond, but bad for low quality Midwich.
+        MAP_FONT_THRESHOLD = 245
+
         crop_gray = crop_img.convert("L")
+
         enhancer = ImageEnhance.Contrast(crop_gray)
         crop_gray = enhancer.enhance(2.5)
-        threshold_crop = crop_gray.point(lambda p: 255 if p > threshold else 0)
+        threshold_crop = crop_gray.point(lambda p: 255 if p > MAP_FONT_THRESHOLD else 0)
 
         try:
             result = winocr.recognize_pil_sync(threshold_crop)
@@ -414,6 +437,8 @@ class DBDOverlayApp:
     def match_map_to_file_with_confidence(self, map_text: str, realm_text: str) -> Path | None:
         """
         Matches OCR text to local map files with a 60% confidence threshold.
+        Realm text uses less contrast, so each character recognised there is
+        worth half a map name character.
         """
         map_clean = map_text.strip().lower()
         realm_clean = realm_text.strip().lower()
@@ -428,22 +453,8 @@ class DBDOverlayApp:
 
         for realm_name, maps in self.maps_by_realm_then_name.items():
             for map_name, path in maps.items():
-                score_map = difflib.SequenceMatcher(
-                    None,
-                    map_clean,
-                    map_name.lower(),
-                ).ratio()
-
-                score_realm = difflib.SequenceMatcher(
-                    None,
-                    realm_clean,
-                    realm_name.lower(),
-                ).ratio()
-
-                # Whether to rate the realm name as important as the longer map name.
-                # I say no as it means having to match two different fonts, at once.
-                # this_score = (score_map + score_realm) / 2
-                this_score = (score_map * len(map_name) + score_realm * len(realm_name)) / (len(map_name) + len(realm_name))
+                this_score = calculate_confidence(realm_clean, map_clean,
+                                                  realm_name, map_name)
 
                 if this_score > best_score:
                     best_score = this_score
@@ -463,8 +474,9 @@ class DBDOverlayApp:
         return None
 
     def _monitor_game_loop(self):
-        EZ_SLEEP = 3.0
-        QK_SLEEP = 0.4
+        EZ_SLEEP = 4.0
+        NORM_SLEEP = 0.7
+        RE_READ_SLEEP = 0.5
         log("[+] Game monitor thread started.")
 
         with MSS() as sct:
@@ -472,6 +484,7 @@ class DBDOverlayApp:
 
             while self.running:
                 self.root.after(0, self._keep_on_top)
+                # We could take fewer pixels, depending on our state, but that complicates.
                 screenshot = sct.grab(monitor)
                 img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
 
@@ -492,7 +505,7 @@ class DBDOverlayApp:
                         log(f"[+] Loading ended (Dark ratio: {dark_pct:.1%}). Scanning for Map Intro...")
                         self.state = GameState.MAP_INTRO
                         self.intro_scan_start = time.time()
-                    time.sleep(QK_SLEEP)
+                    time.sleep(NORM_SLEEP)
 
                 elif self.state == GameState.MAP_INTRO:
                     self.update_status_hud("SCANNING", dark_pct, line_len, "#00FFFF")
@@ -500,15 +513,19 @@ class DBDOverlayApp:
 
                     if has_line:
                         log(f"[+] HUD divider line detected ({line_len}px)! Reading text...")
-                        map_box = get_map_box(*img.size)
-                        realm_box = get_realm_box(*img.size)
 
-                        crop_map = img.crop(map_box)
-                        crop_map.save(self.captures_dir / f"capture_map_{int(time.time())}.png")
+                        # Use the unified identify_map
+                        matched_file, map_text, realm_text = self.identify_map(img)
 
-                        map_text = self.perform_ocr(crop_map, MAP_FONT_THRESHOLD)
-                        realm_text = self.perform_realm_ocr(img.crop(realm_box))
-                        # realm_text = self.perform_ocr(img.crop(realm_box), REALM_FONT_THRESHOLD)
+                        # crop_map = img.crop(get_map_box(*img.size, 0.42))
+                        # crop_map = ensure_1080p_resolution(crop_map, img.height)
+                        # crop_map.save(self.captures_dir / f"capture_map_{int(time.time())}.png")
+                        #
+                        # map_text = self.perform_ocr(crop_map)
+                        #
+                        # crop_realm = img.crop(get_realm_box(*img.size))
+                        # crop_realm = ensure_1080p_resolution(crop_realm, img.height)
+                        # realm_text = self.perform_realm_ocr(crop_realm)
 
                         log(f"[+] OCR Result -> Map: '{map_text}' | Realm: '{realm_text}'")
 
@@ -520,13 +537,13 @@ class DBDOverlayApp:
                         else:
                             # Don't just give up; the background was likely noisy.
                             log(f"[+] NO MATCH, retrying...")
-                            time.sleep(QK_SLEEP)
+                            time.sleep(RE_READ_SLEEP)
 
                     elif elapsed > 4.0:
                         log("[!] Intro HUD scan timed out.")
                         self.state = GameState.IN_GAME_NO_MAP
                     else:
-                        time.sleep(QK_SLEEP)
+                        time.sleep(NORM_SLEEP)
 
                 elif self.state == GameState.OVERLAY_SHOWING:
                     # Map graphic is visible. Monitor for game over loading screen.
@@ -545,6 +562,39 @@ class DBDOverlayApp:
     def run(self):
         self.root.mainloop()
 
+    def identify_map(self, img: Image.Image) -> tuple[Path | None, str, str]:
+        """
+        Attempts OCR from widest (0.53) down to narrowest (0.40).
+        Returns immediately on the first high-confidence match (>= 60%).
+        """
+        # Test widest first -> fallback to tighter crops if background noise corrupts wide crop
+        CROP_WIDTHS = (0.53, 0.46, 0.40)
+
+        crop_realm = ensure_1080p_resolution(
+            img.crop(get_realm_box(*img.size)), img.height)
+        realm_text = self.perform_realm_ocr(crop_realm)
+
+        last_ocr_text = ""
+
+        for width_pct in CROP_WIDTHS:
+            crop_map = ensure_1080p_resolution(
+                img.crop(get_map_box(*img.size, width_pct)), img.height)
+            map_text = self.perform_ocr(crop_map)
+            last_ocr_text = map_text
+
+            if len(map_text) < 3:
+                continue
+
+            matched_path = self.match_map_to_file_with_confidence(
+                map_text, realm_text)
+
+            # match_map_to_file_with_confidence already enforces the >= 60% threshold
+            if matched_path:
+                return matched_path, map_text, realm_text
+
+        # No crop width passed >= 60% threshold
+        return None, last_ocr_text, realm_text
+
 
 # CLI Static Test Runner
 def run_static_test(image_path: str):
@@ -562,15 +612,16 @@ def run_static_test(image_path: str):
             cfg = Config()
             app = DBDOverlayApp(cfg)
             app.maps_by_realm_then_name = app._get_maps_by_realm_then_name()
-            _use_latest_map_variants(app.maps_by_realm_then_name)
+            # _use_latest_map_variants(app.maps_by_realm_then_name)
             _correct_realm_and_map_names(app.maps_by_realm_then_name, cfg.aliases, cfg.realm_aliases)
 
-            map_box = get_map_box(*img.size)
-            realm_box = get_realm_box(*img.size)
+            matched_file, map_text, realm_text = app.identify_map(img)
 
-            map_text = app.perform_ocr(img.crop(map_box), MAP_FONT_THRESHOLD)
-            realm_text = app.perform_realm_ocr(img.crop(realm_box))
-            # realm_text = app.perform_ocr(img.crop(realm_box), REALM_FONT_THRESHOLD)
+            # map_box = get_map_box(*img.size, 0.42)
+            # realm_box = get_realm_box(*img.size)
+            #
+            # map_text = app.perform_ocr(img.crop(map_box))
+            # realm_text = app.perform_realm_ocr(img.crop(realm_box))
 
             print(f"[*] OCR Extracted       : Map='{map_text}' | Realm='{realm_text}'")
             matched = app.match_map_to_file_with_confidence(map_text, realm_text)

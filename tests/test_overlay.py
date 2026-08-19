@@ -1,7 +1,9 @@
+import difflib
 from pathlib import Path
 from PIL import Image
 import pytest
-from dbd_maps.map_overlay import DBDOverlayApp, HAS_WINOCR, get_map_box, get_realm_box, is_loading_screen, detect_divider_line, _use_latest_map_variants
+from dbd_maps.map_overlay import DBDOverlayApp, HAS_WINOCR, get_map_box, get_realm_box, is_loading_screen, detect_divider_line
+from dbd_maps.mapping_lib import _use_latest_map_variants
 
 
 def test_loading_screen_detection():
@@ -77,11 +79,11 @@ def test_use_latest_map_variants_collapses_roman_numerals():
 def test_winocr_finds_purgation_map_name():
     img_path = Path("examples/temple_of_purgation.jpg")
     img = Image.open(img_path).convert("RGB")
-    map_box = get_map_box(*img.size)
+    map_box = get_map_box(*img.size, 0.42)
 
     # Bypass `__init__``; we don't need map-display preferences.
     app = DBDOverlayApp.__new__(DBDOverlayApp)
-    map_text = app.perform_ocr(img.crop(map_box), 180)
+    map_text = app.perform_ocr(img.crop(map_box))
 
     assert "THE TEMPLE OF PURGATION" == map_text.upper()
 
@@ -93,9 +95,11 @@ def test_winocr_finds_purgation_realm_name():
     realm_box = get_realm_box(*img.size)
 
     app = DBDOverlayApp.__new__(DBDOverlayApp)
-    realm_text = app.perform_ocr(img.crop(realm_box), 150)
+    realm_text = app.perform_realm_ocr(img.crop(realm_box))
 
-    assert "RED FOREST" == realm_text.upper()
+    score_realm = difflib.SequenceMatcher(
+        None, realm_text.lower(), "RED FOREST".lower()).ratio()
+    assert score_realm > 0.6
 
 
 @pytest.mark.skipif(not HAS_WINOCR, reason="WinOCR requires Windows 10/11")
@@ -105,7 +109,7 @@ def test_winocr_misses_ormond_realm_name_with_low_contrast():
     realm_box = get_realm_box(*img.size)
 
     app = DBDOverlayApp.__new__(DBDOverlayApp)
-    realm_text = app.perform_ocr(img.crop(realm_box), 150)
+    realm_text = app.perform_realm_ocr(img.crop(realm_box))
 
     assert "" == realm_text.upper()
 

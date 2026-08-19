@@ -48,15 +48,49 @@ jobs:
       - name: Build executable
         shell: bash
         run: |
-          PyInstaller --onedir --windowed --version-file version.txt src/dbd_maps/map_overlay.py
-          cp config.ini dist/map_overlay/config.ini
-          cp -r local_maps dist/map_overlay/local_maps
+          PyInstaller \
+            --name dbd_maps \
+            --icon=dbd_maps.ico \
+            --onedir \
+            --windowed \
+            --version-file version.txt \
+            --noconfirm \
+            --exclude-module sqlite3 \
+            --exclude-module unittest \
+            --exclude-module pydoc \
+            --exclude-module lib2to3 \
+            --exclude-module multiprocessing \
+            --exclude-module test \
+            --exclude-module doctest \
+            --exclude-module bz2 \
+            --exclude-module _bz2 \
+            --exclude-module lzma \
+            --exclude-module _lzma \
+            --exclude-module decimal \
+            --exclude-module fractions \
+            --exclude-module ssl \
+            --exclude-module _ssl \
+            --exclude-module socket \
+            --exclude-module http \
+            --exclude-module email \
+            --exclude-module urllib \
+            --exclude-module xml \
+            --exclude-module xmlrpc \
+            --exclude-module html \
+            --exclude-module ftplib \
+            --exclude-module poplib \
+            --exclude-module imaplib \
+            --exclude-module smtplib \
+            src/dbd_maps/map_overlay.py
+          cp config.ini dist/dbd_maps/
+          cp dbd_maps.ico dist/dbd_maps/
+          cp -r local_maps dist/dbd_maps/local_maps
 
       - name: Create archive
         shell: bash
         run: |
           cd dist
-          7z a ../dbd-maps-windows.zip map_overlay
+          7z a ../dbd-maps-windows.zip dbd_maps
 
       - name: Create GitHub Release
         env:
