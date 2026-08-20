@@ -2,6 +2,8 @@ import ctypes
 import configparser
 import datetime
 import difflib
+from typing import Optional
+
 import keyboard
 from enum import Enum, auto
 from pathlib import Path
@@ -436,7 +438,7 @@ class DBDOverlayApp:
             log(f"[!] WinOCR Error: {e}")
             return ""
 
-    def match_map_to_file_with_confidence(self, map_text: str, realm_text: str) -> Path | None:
+    def match_map_to_file_with_confidence(self, map_text: str, realm_text: str) -> Optional[Path]:
         """
         Matches OCR text to local map files with a 60% confidence threshold.
         Realm text uses less contrast, so each character recognised there is
@@ -551,7 +553,7 @@ class DBDOverlayApp:
     def run(self):
         self.root.mainloop()
 
-    def identify_map(self, img: Image.Image) -> tuple[Path | None, str, str]:
+    def identify_map(self, img: Image.Image) -> tuple[Optional[Path], str, str]:
         """
         Attempts OCR from widest (0.53) down to narrowest (0.40).
         Returns immediately on the first high-confidence match (>= 60%).
