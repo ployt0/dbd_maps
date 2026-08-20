@@ -4,10 +4,9 @@
 
 Maps drawn by Lethia from hens333's discord server.
 
-This is a short script that is easy to inspect and maintain. I am also trying to keep it lightweight and low rent. No heavy .NET dependencies. You can [use a relatively recent python interpreter](#for-the-curious), and the modest packages identified in `requirements.txt`. 
+This is a short script that is easy to inspect and maintain. I am also trying to keep it lightweight and low rent. No heavy .NET dependencies. You can [use a relatively recent python interpreter](#for-the-curious), and the modest packages identified in ~~`requirements.txt`~~ pyproject.toml.
 
 Alternatively, just download the Windows release, run it (preferably from a shell for more feedback), and stop reading this, now.
-
 
 
 https://github.com/user-attachments/assets/77b72df5-decd-408c-be0c-d59ee33195bf
@@ -16,25 +15,26 @@ https://github.com/user-attachments/assets/77b72df5-decd-408c-be0c-d59ee33195bf
 
 ## For the curious
 
-I first wrote this for the Bash shell, on Windows.
+I wrote this to run from the Bash shell, on Windows.
 
 ```bash
 pip install -r requirements.txt
 python src/dbd_maps/map_overlay.py
 ```
 
-Now I am packaging it as an executable, the commands have been updated to run on PowerShell:
+The commands to run on PowerShell are:
 
 ```powershell
 pip install .
-PYTHONPATH=src python -m dbd_maps.map_overlay
+$env:PYTHONPATH = "src"
+python -m dbd_maps.map_overlay
 ```
 
 Edit the `config.ini` file to suit your needs.
 
 ## Get the maps
 
-I'm including the maps, because they are everywhere. I am also including the downloader script, so I don't *have* to include the maps. That script, is `download_callouts.py`, and puts them where they should go.
+I include the maps, because they are everywhere and I want us to be on the same page. I am also including the downloader script, so I don't *have* to include the maps. I have had to rename quite a few maps, so I won't be maintaining the downloader. That script, is `download_callouts.py`, and puts them where they should go.
 
 Maps need aliases because hens' naming doesn't match precisely to what is shown on screen. The `config.ini` file has the aliases.
 
@@ -44,6 +44,8 @@ To use the downloader_script (from Bash):
 pip install beautifulsoup4
 python src/download_callouts.py
 ```
+
+If I had to make my own maps, I'd start from https://deadbydaylight.wiki.gg/wiki/Realms, which is very basic, but they are all there.
 
 ## Tests
 
