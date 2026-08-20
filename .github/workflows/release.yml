@@ -70,7 +70,6 @@ jobs:
             --exclude-module fractions \
             --exclude-module ssl \
             --exclude-module _ssl \
-            --exclude-module socket \
             --exclude-module http \
             --exclude-module email \
             --exclude-module urllib \
@@ -83,7 +82,6 @@ jobs:
             --exclude-module smtplib \
             src/dbd_maps/map_overlay.py
           cp config.ini dist/dbd_maps/
-          cp dbd_maps.ico dist/dbd_maps/
           cp -r local_maps dist/dbd_maps/local_maps
 
       - name: Create archive

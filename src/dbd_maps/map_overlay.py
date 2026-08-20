@@ -18,8 +18,10 @@ HAS_WINOCR = False
 try:
     import winocr
     HAS_WINOCR = True
-except ImportError:
-    pass
+except ImportError as e:
+    import traceback
+    print(f"[*] WinOCR load failed: {e}")
+    traceback.print_exc()
 
 
 STATUS_PANEL_WIDTH = 110
@@ -513,20 +515,7 @@ class DBDOverlayApp:
 
                     if has_line:
                         log(f"[+] HUD divider line detected ({line_len}px)! Reading text...")
-
-                        # Use the unified identify_map
                         matched_file, map_text, realm_text = self.identify_map(img)
-
-                        # crop_map = img.crop(get_map_box(*img.size, 0.42))
-                        # crop_map = ensure_1080p_resolution(crop_map, img.height)
-                        # crop_map.save(self.captures_dir / f"capture_map_{int(time.time())}.png")
-                        #
-                        # map_text = self.perform_ocr(crop_map)
-                        #
-                        # crop_realm = img.crop(get_realm_box(*img.size))
-                        # crop_realm = ensure_1080p_resolution(crop_realm, img.height)
-                        # realm_text = self.perform_realm_ocr(crop_realm)
-
                         log(f"[+] OCR Result -> Map: '{map_text}' | Realm: '{realm_text}'")
 
                         matched_file = self.match_map_to_file_with_confidence(map_text, realm_text)
@@ -616,18 +605,11 @@ def run_static_test(image_path: str):
             _correct_realm_and_map_names(app.maps_by_realm_then_name, cfg.aliases, cfg.realm_aliases)
 
             matched_file, map_text, realm_text = app.identify_map(img)
-
-            # map_box = get_map_box(*img.size, 0.42)
-            # realm_box = get_realm_box(*img.size)
-            #
-            # map_text = app.perform_ocr(img.crop(map_box))
-            # realm_text = app.perform_realm_ocr(img.crop(realm_box))
-
             print(f"[*] OCR Extracted       : Map='{map_text}' | Realm='{realm_text}'")
             matched = app.match_map_to_file_with_confidence(map_text, realm_text)
             print(f"[*] File Match Result   : {matched}")
         else:
-            print("[*] WinOCR not installed.")
+            raise Exception("[*] WinOCR not installed.")
     else:
         print("[*] Map Matching Skipped (No Intro HUD / Line detected).")
 

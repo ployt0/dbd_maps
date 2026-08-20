@@ -25,6 +25,8 @@ TEST_SUITE: dict[str, str] = {
     "dead_dawg_saloon.webp": "grave of glenvale/dead dawg saloon",
     "disturbed_ward.webp": "crotus prenn asylum/disturbed ward",
     "disturbed_ward_2.webp": "crotus prenn asylum/disturbed ward",
+    "eyrie_of_crows.webp": "foresaken boneyard/eyrie of crows",
+    "eyrie_of_crows_2.webp": "foresaken boneyard/eyrie of crows",
     "family_residence.webp": "yamaoka estate/family residence",
     "father_campbells_chapel.webp": "crotus prenn asylum/father campbells chapel",
     "forgotten_ruins.webp": "the decimated borgo/forgotten ruins",
@@ -41,6 +43,7 @@ TEST_SUITE: dict[str, str] = {
     "ironworks_of_misery_2.webp": "the macmillan estate/ironworks of misery",
     "ironworks_of_misery_3.webp": "the macmillan estate/ironworks of misery",
     "midwich_elementary_school.webp": "silent hill/midwich elementary school",
+    "midwich_elementary_school_2.webp": "silent hill/midwich elementary school",
     "mount_ormond_resort.webp": "ormond/mount ormond resort",
     "mount_ormond_resort_2.webp": "ormond/mount ormond resort",
     "mount_ormond_resort_3.webp": "ormond/mount ormond resort",
@@ -123,17 +126,6 @@ def run_benchmark():
 
         # Single call to the multi-width matching pipeline
         matched_path, map_text, realm_text = app.identify_map(img)
-
-        # crop_map = img.crop(get_map_box(*img.size, 0.52))
-        # crop_map = ensure_1080p_resolution(crop_map, img.height)
-        # crop_realm = img.crop(get_realm_box(*img.size))
-        # crop_realm = ensure_1080p_resolution(crop_realm, img.height)
-        #
-        # map_text = app.perform_ocr(crop_map)
-        # realm_text = app.perform_realm_ocr(crop_realm)
-        # matched_path = app.match_map_to_file_with_confidence(map_text, realm_text)
-
-        # Calculate confidence against truth
         conf = calculate_confidence(realm_text.lower(), map_text.lower(), *expected_realm_map.split("/"))
 
         is_correct = False

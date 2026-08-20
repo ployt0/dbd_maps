@@ -1,4 +1,7 @@
 debug_captures
+dist
+build
+dbd_maps.spec
 
 # Byte-compiled / optimized / DLL files
 **/__pycache__/
