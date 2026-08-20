@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "setuptools>=80",
+    "setuptools",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 name = "dbd-maps"
 version = "0.0.0"
 description = "Dead by Daylight map overlay"
-requires-python = ">=3.13"
+requires-python = ">=3.9"
 dependencies = [
     "Pillow",
     "mss",
