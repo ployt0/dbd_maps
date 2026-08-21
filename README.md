@@ -2,9 +2,11 @@
 
 ## DBD Maps
 
+This automatically and efficiently overlays the current map in an area of the user's choosing. Configured with the config.ini file in the release archive. Default key combo to end the app is <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F7</kbd>.
+
 Maps drawn by Lethia from hens333's discord server.
 
-This is a short script that is easy to inspect and maintain. I am also trying to keep it lightweight and low rent. No heavy .NET dependencies. You can [use a relatively recent python interpreter](#for-the-curious), and the modest packages identified in ~~`requirements.txt`~~ pyproject.toml.
+This is a short script that is easy to inspect and maintain. I am also trying to keep it lightweight and low rent. No heavy .NET dependencies. You can [use a relatively recent python interpreter](#for-the-curious), and the modest packages identified in ~~`requirements.txt`~~ `pyproject.toml`.
 
 Alternatively, just download the Windows release, run it (preferably from a shell for more feedback), and stop reading this, now.
 
