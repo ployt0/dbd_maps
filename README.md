@@ -28,7 +28,6 @@ The commands to run on PowerShell are:
 
 ```powershell
 pip install .
-$env:PYTHONPATH = "src"
 python -m dbd_maps.map_overlay
 ```
 
